@@ -19,7 +19,7 @@ HANDLER_FUNC(user_agent)
     if (user_agent == NULL)
     {
         http_resp_t* resp = create_resp(500, NULL, "", 0);
-        send_resp(resp, handle);
+        send_resp(resp, handles);
         return 0;
     }
 
@@ -30,7 +30,7 @@ HANDLER_FUNC(user_agent)
     sprintf(final, template, user_agent);
 
     http_resp_t* resp = create_resp(200, "user_agent.html", final, size);
-    send_resp(resp, handle);
+    send_resp(resp, handles);
     free(final);
     return 0;
 }
@@ -59,5 +59,5 @@ int main(int argc, char** argv)
     else
         addr = INADDR_ANY;
 
-    server_loop(addr, port);
+    server_loop(addr, port, false);
 }

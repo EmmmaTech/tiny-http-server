@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <openssl/ssl.h>
 #include <unistd.h>
 
 #include "../macros.h"
@@ -47,7 +48,7 @@ http_resp_t* create_error_resp(int status_code)
     sprintf(buff, temp "\r\n", __VA_ARGS__); \
     strcat(dest, buff);
 
-void send_resp(const http_resp_t* resp, int handle)
+void send_resp(const http_resp_t* resp, handles_t* handles)
 {
     char header[2048], buff[512];
     char *final;
@@ -80,6 +81,6 @@ void send_resp(const http_resp_t* resp, int handle)
     strcpy(final, header);
     strcat(final, resp->payload);
 
-    write(handle, final, len);
+    (handles->ssl != NULL ? SSL_write(handles->ssl, final, len) : write(handles->fd, final, len));
     printf("sent (%d): %s\n", len, final);
 }

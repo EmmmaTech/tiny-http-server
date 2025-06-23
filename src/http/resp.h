@@ -3,6 +3,7 @@
 
 #include "../containers/dict.h"
 #include "../containers/list.h"
+#include "../types/io.h"
 #include "../types/mimetype.h"
 #include "../types/status.h"
 
@@ -17,6 +18,6 @@ typedef struct {
 http_resp_t* create_resp(int status_code, const char* filename, const char* file, int filelen);
 http_resp_t* create_error_resp(int status_code);
 
-void send_resp(const http_resp_t* resp, int handle);
+void send_resp(const http_resp_t* resp, handles_t* handles);
 
 #endif
