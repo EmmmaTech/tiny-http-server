@@ -14,7 +14,7 @@
 
 HANDLER_FUNC(user_agent)
 {
-    const char* user_agent = (char*) dict_get(req->headers, "User-Agent");
+    const char* user_agent = (char*) dict_get(req->headers, "user-agent");
 
     if (user_agent == NULL)
     {
@@ -36,6 +36,20 @@ HANDLER_FUNC(user_agent)
 }
 HANDLER(user_agent, "GET", "/user-agent")
 
+HANDLER_FUNC(hello)
+{
+    const char* file;
+    if (!STRINGS_EQUAL_N(req->payload, "hello", req->payload_len))
+        file = "<!DOCTYPE html>\n<html>\n<head>\n<title>bad person</title>\n</head>\n<body>\n<h1>Wow... not saying hello to me? So rude :c</h1>\n</body>\n</html>";
+    else
+        file = "<!DOCTYPE html>\n<html>\n<head>\n<title>Hello there!</title>\n</head>\n<body>\n<h1>Haiii!!!</h1>\n</body>\n</html>";
+
+    http_resp_t* resp = create_resp(200, "file.html", file, strlen(file));
+    send_resp(resp, handles);
+    return 0;
+}
+HANDLER(hello, "POST", "/hello")
+
 int main(int argc, char** argv)
 {
     if (argc < 2)
@@ -44,6 +58,7 @@ int main(int argc, char** argv)
     }
 
     ADD_HANDLER(user_agent);
+    ADD_HANDLER(hello);
 
     load_files_from(argv[1]);
 

@@ -13,7 +13,8 @@ typedef struct {
     char version[VERSION_MAX_SIZE];
     dict_t* headers;
 
-    const char* payload;
+    char* payload;
+    int payload_len;
 } http_req_t;
 
 const http_req_t* extract_req_info(const char input[], int len);
