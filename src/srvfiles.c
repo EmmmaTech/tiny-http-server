@@ -27,8 +27,6 @@ int load_file(const char* dir, const char* filename)
     sprintf(name, "%s/%s", dir, filename);
 
     const mimetype_t* mime = filename_to_mime(filename);
-    
-    printf("is text: %d\n", mime->text);
 
     if (mime->text)
         mode = "r";
