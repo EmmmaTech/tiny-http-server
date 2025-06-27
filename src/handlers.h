@@ -2,7 +2,7 @@
 #define HANDLERS_H
 
 #include "containers/dict.h"
-#include "http/req.h"
+#include "types/http.h"
 #include "types/io.h"
 
 typedef int (*handler_func_t)(handles_t* handles, const http_req_t*);

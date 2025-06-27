@@ -1,11 +1,11 @@
-#ifndef RESP_H
-#define RESP_H
+#ifndef HTTP_11_RESP_H
+#define HTTP_11_RESP_H
 
-#include "../containers/dict.h"
-#include "../containers/list.h"
-#include "../types/io.h"
-#include "../types/mimetype.h"
-#include "../types/status.h"
+#include "containers/dict.h"
+#include "containers/list.h"
+#include "types/io.h"
+#include "types/mimetype.h"
+#include "types/status.h"
 
 typedef struct {
     const http_status_t* status;

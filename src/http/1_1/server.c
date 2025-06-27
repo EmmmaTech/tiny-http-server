@@ -14,8 +14,9 @@
 #include <unistd.h>
 
 #include "handlers.h"
-#include "http/req.h"
-#include "http/resp.h"
+#include "http/1_1/req.h"
+#include "http/1_1/resp.h"
+#include "io/tcp.h"
 #include "macros.h"
 #include "srvfiles.h"
 #include "types/io.h"
@@ -35,12 +36,8 @@
     fprintf(stderr, txt); \
     exit(status);
 
-struct _pass_to_thread {
-    int* handle_ptr;
-    bool uses_tls;
-}; 
-
-SSL_CTX* sslctx; 
+SSL_CTX* sslctx;
+bool use_tls;
 
 void* handle_connection(void* obj);
 
@@ -82,114 +79,15 @@ void initialize_tls()
     SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
 }
 
-void server_loop(in_addr_t address, int port, bool tls)
+void http_11_server_loop(in_addr_t address, int port, bool tls)
 {
-    pthread_t thread;
-    pthread_attr_t thread_attrs;
-
-    if (pthread_attr_init(&thread_attrs))
-    {
-        perror("failed to initialize pthread attrs");
-        exit(1);
-    }
-
-    if (pthread_attr_setstacksize(&thread_attrs, THREAD_STACK_SIZE))
-    {
-        perror("failed to set thread stack size");
-        exit(1);
-    }
-
-    if (pthread_attr_setdetachstate(&thread_attrs, PTHREAD_CREATE_DETACHED))
-    {
-        perror("failed to set thread to detached");
-        exit(1);
-    }
+    use_tls = tls;
+    open_server(address, port);
 
     if (tls)
         initialize_tls();
 
-    int sock_handle, conn_handle;
-    struct sockaddr_in server, client;
-    socklen_t serverlen, clientlen;
-    
-    memset(&server, 0, sizeof(server));
-    memset(&client, 0, sizeof(client));
-
-    sock_handle = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock_handle < 0)
-    {
-        perror("failed to open main socket");
-        exit(1);
-    }
-
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = address;
-    server.sin_port = htons(port);
-
-    if (bind(sock_handle, (struct sockaddr*)(&server), sizeof(server)))
-    {
-        perror("failed to bind port");
-        exit(1);
-    }
-
-    serverlen = sizeof(server);
-    if (getsockname(sock_handle, (struct sockaddr*)(&server), &serverlen))
-    {
-        perror("failed to get socket name");
-        exit(1);
-    }
-
-    printf("http server: socket opened on address %s, with port %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
-
-    if (listen(sock_handle, CONN_QUEUE_SIZE) < 0)
-    {
-        perror("failed to open socket for listening");
-        exit(1);
-    }
-
-    while (1)
-    {
-        conn_handle = accept(sock_handle, (struct sockaddr*)(&client), &clientlen);
-        
-        if (conn_handle < 0)
-        {
-            perror("failed to accept connection");
-            continue;
-        }
-
-        printf("http server: accepted connection from %s\n", inet_ntoa(client.sin_addr));
-
-        int* handle_ptr = (int*) malloc(sizeof(int));
-        if (handle_ptr == NULL)
-        {
-            fprintf(stderr, "FATAL: could not allocate memory for handle pointer\n");
-            close(conn_handle);
-            continue;
-        }
-
-        *handle_ptr = conn_handle;
-
-        struct _pass_to_thread* obj = (struct _pass_to_thread*) malloc(sizeof(struct _pass_to_thread));
-        if (obj == NULL)
-        {
-            fprintf(stderr, "FATAL: could not allocate memory for obj passed to thread\n");
-            close(conn_handle);
-            continue;
-        }
-
-        obj->handle_ptr = handle_ptr;
-        obj->uses_tls = tls;
-
-        if (pthread_create(&thread, &thread_attrs, handle_connection, obj))
-        {
-            perror("could not create new thread");
-            close(conn_handle);
-            free(handle_ptr);
-            continue;
-        }
-    }
-
-    close(sock_handle);
+    connection_loop(handle_connection);
 }
 
 int default_req_handle(handles_t* handles, const http_req_t* req)
@@ -239,16 +137,11 @@ void* handle_connection(void* obj)
 {
     char buffer[BUFFER_SIZE];
 
-    struct _pass_to_thread* typed_obj = (struct _pass_to_thread*) (obj);
-
-    bool tls = typed_obj->uses_tls;
-    int handle = *(typed_obj->handle_ptr);
-
-    free(typed_obj->handle_ptr);
-    free(typed_obj);
+    int handle = *((int*) obj);
+    free(obj);
 
     SSL* cssl = NULL;
-    if (tls)
+    if (use_tls)
     {
         cssl = SSL_new(sslctx);
         SSL_set_fd(cssl, handle);
@@ -271,7 +164,7 @@ void* handle_connection(void* obj)
     handles->fd = handle;
     handles->ssl = cssl;
 
-    int readlen = tls ? SSL_read(cssl, buffer, sizeof(buffer)) : read(handle, buffer, sizeof(buffer));
+    int readlen = use_tls ? SSL_read(cssl, buffer, sizeof(buffer)) : read(handle, buffer, sizeof(buffer));
     if (readlen > 0)
     {
         printf("received (%d): %s\n", readlen, buffer);
@@ -289,7 +182,7 @@ void* handle_connection(void* obj)
     else if (readlen < 0)
         perror("failed to read");
 
-    if (tls)
+    if (use_tls)
         SSL_free(cssl);
 
     close(handle);

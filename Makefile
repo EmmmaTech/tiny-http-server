@@ -5,7 +5,7 @@ EXEC := $(BUILD)/httpsrv
 
 LIBS := openssl
 INCLUDES := src
-SRC := $(wildcard src/**/*.c) $(wildcard src/*.c)
+SRC := $(wildcard src/**/**/*.c) $(wildcard src/**/*.c) $(wildcard src/*.c)
 OBJS := $(foreach file,$(SRC),$(BUILD)/$(file:.c=.o))
 
 CFLAGS := -Wall -Wextra

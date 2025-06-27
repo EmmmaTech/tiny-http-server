@@ -7,8 +7,8 @@
 #include <openssl/ssl.h>
 #include <unistd.h>
 
-#include "../macros.h"
-#include "../srvfiles.h"
+#include "macros.h"
+#include "srvfiles.h"
 
 http_resp_t* create_resp(int status_code, const char* filename, const char* file, int filelen)
 {

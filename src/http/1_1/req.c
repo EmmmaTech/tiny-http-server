@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../macros.h"
+#include "macros.h"
 
 const http_req_t* extract_req_info(const char input[], int len) 
 {

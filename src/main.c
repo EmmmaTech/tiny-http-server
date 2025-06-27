@@ -4,10 +4,10 @@
 #include <string.h>
 
 #include "handlers.h"
-#include "http/req.h"
-#include "http/resp.h"
+#include "http/1_1/req.h"
+#include "http/1_1/resp.h"
+#include "http/1_1/server.h"
 #include "macros.h"
-#include "server.h"
 #include "srvfiles.h"
 
 #define DEFAULT_PORT 8080
@@ -74,5 +74,5 @@ int main(int argc, char** argv)
     else
         addr = INADDR_ANY;
 
-    server_loop(addr, port, false);
+    http_11_server_loop(addr, port, false);
 }
