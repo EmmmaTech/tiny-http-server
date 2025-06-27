@@ -6,10 +6,11 @@ my old draft can be found [here](https://gist.github.com/EmmmaTech/c0b6abb7a520e
 
 ## features
 
-- supports `GET` requests made with `HTTP/1.1` (`HTTP/2.0` has not been tested)
-- supports concurrent connections with the usage of multiple threads
+- supports most requests made with `HTTP/1.1` (except for `CONNECT`)
+- supports concurrent connections via multithreading
 - handles http error responses
 - supports custom handlers to process requests 
+- tls support via openssl (off by default)
 
 ## usage
 
