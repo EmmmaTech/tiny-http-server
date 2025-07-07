@@ -26,6 +26,7 @@ const http_status_t status_codes[] = {
     CODE(403, "Forbidden"),
     CODE(404, "Not Found"),
     CODE(405, "Method Not Allowed"),
+    CODE(411, "Length Required"),
 
     CODE(500, "Internal Server Error"),
     CODE(501, "Not Implemented"),
