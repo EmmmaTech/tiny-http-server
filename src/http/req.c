@@ -6,52 +6,66 @@
 #include <string.h>
 
 #include "../macros.h"
+#include "resp.h"
 
-const http_req_t* extract_req_info(const char input[], int len) 
+#define CHECK_END_OF_LINE(ptr, end, len) \
+    if (len >= end - ptr) { \
+        http_resp_t* resp = create_error_resp(400); \
+        send_resp(resp, handles); \
+        return NULL; \
+    }
+
+const http_req_t* extract_req_info(handles_t* handles, const char input[], int len) 
 {
     char *name, *value;
-    int curlen, i;
+    int curlen;
 
     http_req_t* req = malloc(sizeof(http_req_t));
     req->headers = NULL;
     req->payload = NULL;
 
-    const char* line = &input[0];
+    const char* start = &input[0];
+    const char* end = start + len;
+
+    char* line = (char*) start;
+    const char* line_end = strstr(line, "\r\n");
 
     curlen = strcspn(line, " ");
-    SCUFFED_MEMCPY(req->method, line, curlen);
+    CHECK_END_OF_LINE(line, line_end, curlen);
+    memcpy(req->method, line, MIN(LEN(req->method), curlen));
+    line += curlen;
+    line += strspn(line, " ");
 
-    line++;
     curlen = strcspn(line, " ");
-    SCUFFED_MEMCPY(req->path, line, curlen);
+    CHECK_END_OF_LINE(line, line_end, curlen);
+    memcpy(req->path, line, MIN(LEN(req->path), curlen));
+    line += curlen;
+    line += strspn(line, " ");
 
-    line++;
-    curlen = strcspn(line, "\r\n");
-    SCUFFED_MEMCPY(req->version, line, curlen);
+    curlen = line_end - line;
+    memcpy(req->version, line, MIN(LEN(req->version), curlen));
+    line += curlen;
+    line += strspn(line, "\r\n");
 
     req->headers = dict_create();
-    if (*(line) == '\r')
+
+    if (line != end)
     {
-        while (1)
+        for (line_end = line + strcspn(line, "\r\n"); line_end != end; line += strspn(line, "\r\n"), line_end = line + strcspn(line, "\r\n"))
         {
-            line += strcspn(line, "\r\n") + 2;
-
-            if (*(line) == '\r') break;
-
             int namelen = strcspn(line, ":");
             name = calloc(namelen, sizeof(char));
-            SCUFFED_MEMCPY(name, line, namelen);
+            memcpy(name, line, namelen);
 
-            // second check, just in case
-            if (name[0] == '\r') break;
+            for (int i = 0; i < namelen; i++) name[i] = tolower(name[i]);
 
-            for (size_t j = 0; j < strlen(name); ++j) name[j] = tolower(name[j]);
+            line += namelen;
+            line += strspn(line, ": ");
 
-            line += 2;
-
-            int vallen = strcspn(line, "\r\n");
-            value = calloc(vallen, sizeof(char));
-            SCUFFED_MEMCPY(value, line, vallen);
+            int valuelen = strcspn(line, "\r\n");
+            value = calloc(valuelen, sizeof(char));
+            memcpy(value, line, valuelen);
+            line += valuelen;
 
             dict_append(req->headers, name, value);
         }
@@ -66,10 +80,18 @@ const http_req_t* extract_req_info(const char input[], int len)
 
                 // skip forward to actual content
                 line += strspn(line, "\r\n");
-                SCUFFED_MEMCPY(req->payload, line, req->payload_len);
+                memcpy(req->payload, line, req->payload_len);
             }
+        }
+        else if (line + strspn(line, "\r\n") != end)
+        {
+            http_resp_t* resp = create_resp(411, NULL, NULL, 0);
+            send_resp(resp, handles);
+            return NULL;
         }
     }
 
     return req;
 }
+
+#undef CHECK_END_OF_LINE

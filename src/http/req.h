@@ -2,6 +2,7 @@
 #define REQ_H
 
 #include "../containers/dict.h"
+#include "../types/io.h"
 
 #define METHOD_MAX_SIZE 8
 #define PATH_MAX_SIZE 256
@@ -17,6 +18,6 @@ typedef struct {
     int payload_len;
 } http_req_t;
 
-const http_req_t* extract_req_info(const char input[], int len);
+const http_req_t* extract_req_info(handles_t* handles, const char input[], int len);
 
 #endif
