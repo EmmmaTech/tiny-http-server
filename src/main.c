@@ -55,6 +55,7 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         printf("usage: ./httpsrv servedir [port] [addr]\n");
+        exit(1);
     }
 
     ADD_HANDLER(user_agent);
@@ -74,5 +75,5 @@ int main(int argc, char** argv)
     else
         addr = INADDR_ANY;
 
-    server_loop(addr, port, false);
+    server_loop(addr, port, true);
 }
