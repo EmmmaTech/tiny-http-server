@@ -25,6 +25,9 @@
 #define THREAD_STACK_SIZE 524288
 #define BUFFER_SIZE 65536
 
+// if you want http fallback, set this to 1
+#define HTTP_FALLBACK 0
+
 #define HANDLE_SSL_ERR_ARGS(status, txt, ...) \
     ERR_print_errors_fp(stderr); \
     fprintf(stderr, txt, __VA_ARGS__); \
@@ -35,14 +38,26 @@
     fprintf(stderr, txt); \
     exit(status);
 
+const unsigned char alpn_support[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'};
+
 struct _pass_to_thread {
-    int* handle_ptr;
+    int strm_handle;
     bool uses_tls;
 }; 
 
 SSL_CTX* sslctx; 
 
 void* handle_connection(void* obj);
+
+int select_alpn(SSL *ssl, const unsigned char **out,
+                       unsigned char *out_len, const unsigned char *in,
+                       unsigned int in_len, void *arg)
+{
+    if (SSL_select_next_proto((unsigned char**)out, out_len, alpn_support, sizeof(alpn_support), in, in_len) != OPENSSL_NPN_NEGOTIATED)
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+
+    return SSL_TLSEXT_ERR_OK;
+}
 
 void initialize_tls()
 {
@@ -80,6 +95,7 @@ void initialize_tls()
 
     SSL_CTX_set_timeout(sslctx, 60 * 60);
     SSL_CTX_set_verify(sslctx, SSL_VERIFY_NONE, NULL);
+    SSL_CTX_set_alpn_select_cb(sslctx, select_alpn, NULL);
 }
 
 void server_loop(in_addr_t address, int port, bool tls)
@@ -159,16 +175,6 @@ void server_loop(in_addr_t address, int port, bool tls)
 
         printf("http server: accepted connection from %s\n", inet_ntoa(client.sin_addr));
 
-        int* handle_ptr = (int*) malloc(sizeof(int));
-        if (handle_ptr == NULL)
-        {
-            fprintf(stderr, "FATAL: could not allocate memory for handle pointer\n");
-            close(conn_handle);
-            continue;
-        }
-
-        *handle_ptr = conn_handle;
-
         struct _pass_to_thread* obj = (struct _pass_to_thread*) malloc(sizeof(struct _pass_to_thread));
         if (obj == NULL)
         {
@@ -177,14 +183,14 @@ void server_loop(in_addr_t address, int port, bool tls)
             continue;
         }
 
-        obj->handle_ptr = handle_ptr;
+        obj->strm_handle = conn_handle;
         obj->uses_tls = tls;
 
         if (pthread_create(&thread, &thread_attrs, handle_connection, obj))
         {
             perror("could not create new thread");
             close(conn_handle);
-            free(handle_ptr);
+            free(obj);
             continue;
         }
     }
@@ -242,9 +248,8 @@ void* handle_connection(void* obj)
     struct _pass_to_thread* typed_obj = (struct _pass_to_thread*) (obj);
 
     bool tls = typed_obj->uses_tls;
-    int handle = *(typed_obj->handle_ptr);
+    int handle = typed_obj->strm_handle;
 
-    free(typed_obj->handle_ptr);
     free(typed_obj);
 
     SSL* cssl = NULL;
@@ -258,10 +263,15 @@ void* handle_connection(void* obj)
         {
             SSL_free(cssl);
             ERR_print_errors_fp(stderr);
-            fprintf(stderr, "failed to establish a TLS connection with client\n");
 
+            #if HTTP_FALLBACK
+            fprintf(stderr, "failed to establish a TLS connection with client, attempting to perform plaintext\n");
+            tls = false;
+            #else
+            fprintf(stderr, "failed to establish a TLS connection with client, closing connection\n");
             close(handle);
             pthread_exit(NULL);
+            #endif
         }
     }
 
@@ -276,15 +286,23 @@ void* handle_connection(void* obj)
     {
         printf("received (%d): %s\n", readlen, buffer);
 
-        const http_req_t* req = extract_req_info(buffer, readlen);
-        printf("req for %s with method %s and version %s\n", req->path, req->method, req->version);
+        const http_req_t* req = extract_req_info(handles, buffer, readlen);
+
+        if (req == NULL)
+        {
+            printf("error while parsing request, closing connection\n");
+
+            close(handle);
+            pthread_exit(NULL);
+        }
+
+        printf("request for %s with method %s and version %s\n", req->path, req->method, req->version);
 
         handler_func_t handler = get_handler(req->method, req->path);
+        if (handler == NULL)
+            handler = default_req_handle;
 
-        if (handler != NULL)
-            handler(handles, req);
-        else
-            default_req_handle(handles, req);
+        handler(handles, req);
     }
     else if (readlen < 0)
         perror("failed to read");
