@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
 #include "handlers.h"
 #include "http/req.h"
 #include "http/resp.h"
@@ -18,7 +19,7 @@ HANDLER_FUNC(user_agent)
 
     if (user_agent == NULL)
     {
-        http_resp_t* resp = create_resp(500, NULL, "", 0);
+        http_resp_t* resp = create_resp(400, NULL, "", 0);
         send_resp(resp, handles);
         return 0;
     }
@@ -54,26 +55,24 @@ int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        printf("usage: ./httpsrv servedir [port] [addr]\n");
+        printf("usage: ./httpsrv servedir [config]\n");
+        printf("config defaults to ./config.conf\n");
         exit(1);
+    }
+
+    const char* conf = "./config.conf";
+    if (argc == 3)
+        conf = argv[2];
+
+    if (parse_config(conf))
+    {
+        printf("failed to parse config, exiting\n");
+        return 1;
     }
 
     ADD_HANDLER(user_agent);
     ADD_HANDLER(hello);
 
     load_files_from(argv[1]);
-
-    int port;
-    if (argc == 3)
-        port = atoi(argv[2]);
-    else
-        port = DEFAULT_PORT;
-
-    in_addr_t addr;
-    if (argc == 4)
-        addr = inet_addr(argv[3]);
-    else
-        addr = INADDR_ANY;
-
-    server_loop(addr, port, true);
+    server_loop(config->addr.s_addr, config->port, true);
 }

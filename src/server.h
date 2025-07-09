@@ -5,6 +5,6 @@
 
 #include <arpa/inet.h>
 
-void server_loop(in_addr_t address, int port, bool tls);
+void server_loop();
 
 #endif

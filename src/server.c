@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "config.h"
 #include "handlers.h"
 #include "http/req.h"
 #include "http/resp.h"
@@ -21,9 +22,7 @@
 #include "types/io.h"
 
 #define CONN_QUEUE_SIZE 200
-#define CONN_LIMIT 400
 #define THREAD_STACK_SIZE 524288
-#define BUFFER_SIZE 65536
 
 // if you want http fallback, set this to 1
 #define HTTP_FALLBACK 0
@@ -42,10 +41,9 @@ const unsigned char alpn_support[] = {8, 'h', 't', 't', 'p', '/', '1', '.', '1'}
 
 struct _pass_to_thread {
     int strm_handle;
-    bool uses_tls;
 }; 
 
-SSL_CTX* sslctx; 
+SSL_CTX* sslctx;
 
 void* handle_connection(void* obj);
 
@@ -81,16 +79,16 @@ void initialize_tls()
     opts |= SSL_OP_CIPHER_SERVER_PREFERENCE;
     SSL_CTX_set_options(sslctx, opts);
 
-    if (SSL_CTX_use_certificate_chain_file(sslctx, "cert.pem") <= 0)
+    if (SSL_CTX_use_certificate_chain_file(sslctx, config->cert_filename) <= 0)
     {
         SSL_CTX_free(sslctx);
         HANDLE_SSL_ERR(1, "failed to load certificate chain file\n");
     }
 
-    if (SSL_CTX_use_PrivateKey_file(sslctx, "key.pem", SSL_FILETYPE_PEM) <= 0)
+    if (SSL_CTX_use_PrivateKey_file(sslctx, config->privkey_filename, SSL_FILETYPE_PEM) <= 0)
     {
         SSL_CTX_free(sslctx);
-        HANDLE_SSL_ERR(1, "failed to load certificate private key, possible that you're a moron?\n");
+        HANDLE_SSL_ERR(1, "failed to load certificate private key\n");
     }
 
     SSL_CTX_set_timeout(sslctx, 60 * 60);
@@ -98,7 +96,7 @@ void initialize_tls()
     SSL_CTX_set_alpn_select_cb(sslctx, select_alpn, NULL);
 }
 
-void server_loop(in_addr_t address, int port, bool tls)
+void server_loop()
 {
     pthread_t thread;
     pthread_attr_t thread_attrs;
@@ -121,7 +119,7 @@ void server_loop(in_addr_t address, int port, bool tls)
         exit(1);
     }
 
-    if (tls)
+    if (config->tls)
         initialize_tls();
 
     int sock_handle, conn_handle;
@@ -139,8 +137,8 @@ void server_loop(in_addr_t address, int port, bool tls)
     }
 
     server.sin_family = AF_INET;
-    server.sin_addr.s_addr = address;
-    server.sin_port = htons(port);
+    server.sin_addr = config->addr;
+    server.sin_port = htons(config->port);
 
     if (bind(sock_handle, (struct sockaddr*)(&server), sizeof(server)))
     {
@@ -184,7 +182,6 @@ void server_loop(in_addr_t address, int port, bool tls)
         }
 
         obj->strm_handle = conn_handle;
-        obj->uses_tls = tls;
 
         if (pthread_create(&thread, &thread_attrs, handle_connection, obj))
         {
@@ -243,14 +240,20 @@ int default_req_handle(handles_t* handles, const http_req_t* req)
 
 void* handle_connection(void* obj)
 {
-    char buffer[BUFFER_SIZE];
-
     struct _pass_to_thread* typed_obj = (struct _pass_to_thread*) (obj);
-
-    bool tls = typed_obj->uses_tls;
     int handle = typed_obj->strm_handle;
-
+    bool tls = config->tls;
     free(typed_obj);
+
+    char* buffer;
+    buffer = (char*) calloc(config->buffer_size, sizeof(char));
+
+    if (buffer == NULL)
+    {
+        fprintf(stderr, "FATAL: could not allocate memory for read buffer\n");
+        close(handle);
+        pthread_exit(NULL);
+    }
 
     SSL* cssl = NULL;
     if (tls)
@@ -264,24 +267,27 @@ void* handle_connection(void* obj)
             SSL_free(cssl);
             ERR_print_errors_fp(stderr);
 
-            #if HTTP_FALLBACK
-            fprintf(stderr, "failed to establish a TLS connection with client, attempting to perform plaintext\n");
-            tls = false;
-            #else
-            fprintf(stderr, "failed to establish a TLS connection with client, closing connection\n");
-            close(handle);
-            pthread_exit(NULL);
-            #endif
+            if (config->http_fallback)
+            {
+                fprintf(stderr, "failed to establish a TLS connection with client, attempting to perform plaintext\n");
+                tls = false;
+            }
+            else
+            {
+                fprintf(stderr, "failed to establish a TLS connection with client, closing connection\n");
+                close(handle);
+                pthread_exit(NULL);
+            }
         }
     }
 
-    bzero(buffer, sizeof(buffer));
+    memset(buffer, 0, config->buffer_size);
 
     handles_t* handles = (handles_t*) malloc(sizeof(handles_t));
     handles->fd = handle;
     handles->ssl = cssl;
 
-    int readlen = tls ? SSL_read(cssl, buffer, sizeof(buffer)) : read(handle, buffer, sizeof(buffer));
+    int readlen = tls ? SSL_read(cssl, buffer, config->buffer_size) : read(handle, buffer, config->buffer_size);
     if (readlen > 0)
     {
         printf("received (%d): %s\n", readlen, buffer);
